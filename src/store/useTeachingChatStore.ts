@@ -57,6 +57,14 @@ const getSystemPromptWithDate = (persona: Persona) => {
   return `Current date: ${dateStr}. Knowledge cutoff: 2023-10.\n${PERSONA_PROMPTS[persona]}`;
 };
 
+// Reads like a plausible assistant reply rather than debug/instrumentation
+// text, so students don't mistake it for something the app is telling them.
+const PERSONA_MOCK_REPLIES: Record<Persona, (preview: string) => string> = {
+  ta: (preview) => `Good question — let's unpack "${preview}" step by step, starting with the core idea, then a common pitfall to watch out for.`,
+  writer: (preview) => `I like where "${preview}" is heading! Here's a way to make it land even better.`,
+  reviewer: (preview) => `Looking at "${preview}": the logic mostly holds up, but here are a couple of edge cases worth tightening.`
+};
+
 const MOCK_MAX_TOKENS = 600; 
 
 function generateMockId() {
@@ -225,6 +233,9 @@ export const useTeachingChatStore = create<TeachingChatState>((set, get) => ({
       set({ isSearching: false });
 
       // 4. Final Assistant Answer
+      // Note: this is the model's *response*, not part of the request — only
+      // append it to the chat transcript. windowMessages/lastPayload must stay
+      // frozen as the payload that was actually sent for req2.
       const finalReply: Msg = {
         id: generateMockId(),
         role: "assistant",
@@ -233,20 +244,23 @@ export const useTeachingChatStore = create<TeachingChatState>((set, get) => ({
         source: "mock"
       };
       currentMsgs = [...currentMsgs, finalReply];
-      updateWindowsAndPayload(currentMsgs, false);
+      set({ messages: currentMsgs });
 
     } else {
       // Normal Chat Flow
       await new Promise(res => setTimeout(res, 1000));
+      // Same note as above: the reply is a response, not part of the request
+      // that was sent, so it must not flow back into windowMessages/lastPayload.
+      const preview = content.trim().length > 24 ? `${content.trim().slice(0, 24)}…` : content.trim();
       const mockReply: Msg = {
         id: generateMockId(),
         role: "assistant",
-        content: `[Mock ${get().persona} Response]: I received your message "${content.substring(0, 10)}...". I am answering normally.`,
+        content: PERSONA_MOCK_REPLIES[get().persona](preview),
         createdAt: Date.now(),
         source: "mock"
       };
       currentMsgs = [...currentMsgs, mockReply];
-      updateWindowsAndPayload(currentMsgs, false);
+      set({ messages: currentMsgs });
     }
   }
 }));
